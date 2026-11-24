@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Upload, FileSpreadsheet } from '@lucide/vue';
+import { Upload } from '@lucide/vue';
 defineProps<{
   accept: string;
   multiple?: boolean;
-  compact?: boolean;
   title: string;
   hint: string;
   disabled?: boolean;
@@ -26,7 +25,7 @@ function drop(event: DragEvent, disabled?: boolean) {
 <template>
   <label
     class="upload-zone"
-    :class="{ dragging, compact, disabled }"
+    :class="{ dragging, disabled }"
     @dragover.prevent="!disabled && (dragging = true)"
     @dragleave.prevent="dragging = false"
     @drop.prevent="drop($event, disabled)"
@@ -39,11 +38,9 @@ function drop(event: DragEvent, disabled?: boolean) {
       :disabled="disabled"
       @change="choose"
     />
-    <span class="upload-icon"
-      ><FileSpreadsheet v-if="compact" :size="24" /><Upload v-else :size="26"
-    /></span>
+    <span class="upload-icon"><Upload :size="25" aria-hidden="true" /></span>
     <span class="upload-title">{{ title }}</span>
     <span class="upload-hint">{{ hint }}</span>
-    <span v-if="!compact" class="button secondary small">选择源文件</span>
+    <span class="button secondary">选择文件</span>
   </label>
 </template>

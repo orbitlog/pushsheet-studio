@@ -1,4 +1,4 @@
-import type { PushProject, TemplateInfo } from '../types';
+import { copyLocales, type CopyRow, type TemplateInfo } from '../types';
 import {
   columnIndex,
   columnName,
@@ -10,7 +10,6 @@ import {
   sharedStrings,
   xml,
 } from './ooxml';
-import { validate } from './validate';
 
 const isEmoji = (text: string) =>
   /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(text);
@@ -93,15 +92,9 @@ export function richText(value: string, fonts: Fonts, prefix = ''): string {
   return `<${prefix}is>${segments.map((segment) => `<${prefix}r><${prefix}rPr>${segment.emoji ? fonts.emoji : fonts.plain}</${prefix}rPr><${prefix}t xml:space="preserve">${escapeXml(segment.text)}</${prefix}t></${prefix}r>`).join('')}</${prefix}is>`;
 }
 
-export async function fillXlsx(
-  template: TemplateInfo,
-  project: PushProject,
-  clearUnfilled = false,
-): Promise<Uint8Array> {
-  const errors = validate([project], template).filter((i) => i.severity === 'error');
-  if (errors.length) throw new Error(errors[0].message);
+export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Uint8Array> {
+  const { path } = template;
   const zip = await openZip(template.bytes);
-  const path = template.sheets[template.sheetIndex].path;
   const [sheetText, shared, styleText] = await Promise.all([
     readPart(zip, path),
     sharedStrings(zip),
@@ -112,19 +105,22 @@ export async function fillXlsx(
   const prefix = doc.documentElement.prefix ? `${doc.documentElement.prefix}:` : '';
   const cells = new Map(elements(doc, 'c').map((c) => [c.getAttribute('r') ?? '', c]));
   const changes = new Map<string, string>();
-  for (const [locale, col] of Object.entries(template.locales)) {
-    if (!Object.hasOwn(project.locales, locale) && !clearUnfilled) continue;
+  for (const locale of copyLocales) {
+    const col = template.locales[locale];
+    const items = row.locales[locale];
+    const position = `${row.source} 第 ${row.rowNumber} 行（${locale}）`;
+    if (items.length > template.pairs.length)
+      throw new Error(
+        `${position}有 ${items.length} 组文案，模板只有 ${template.pairs.length} 组位置。`,
+      );
     template.pairs.forEach((pair, index) => {
       for (const field of ['title', 'subTitle'] as const) {
+        const value = items[index]?.[field] ?? '';
+        if (value.length > 32767) throw new Error(`${position}的文案超过 Excel 单元格的长度限制。`);
+        if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/u.test(value))
+          throw new Error(`${position}含有 Excel 无法保存的字符。`);
         const ref = `${columnName(col)}${pair[field]}`;
-        changes.set(
-          ref,
-          richText(
-            project.locales[locale]?.[index]?.[field] ?? '',
-            getFonts(cells.get(ref), shared, styles, prefix),
-            prefix,
-          ),
-        );
+        changes.set(ref, richText(value, getFonts(cells.get(ref), shared, styles, prefix), prefix));
       }
     });
   }

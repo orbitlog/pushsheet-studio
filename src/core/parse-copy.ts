@@ -1,10 +1,8 @@
 import type { CopyItem } from '../types';
 
-export type CopyResult = { items: CopyItem[]; warnings: string[] };
-
-export function parseCopy(input: string): CopyResult {
+export function parseCopy(input: string): CopyItem[] {
+  if (!input.trim()) return [];
   const items: CopyItem[] = [];
-  const warnings: string[] = [];
   let active: CopyItem | undefined;
   let field: keyof CopyItem | undefined;
   const seen = new Set<keyof CopyItem>();
@@ -32,8 +30,9 @@ export function parseCopy(input: string): CopyResult {
     } else if (active && field) {
       active[field] += `${lines[i - 1] ?? ''}${line}`;
     } else if (line.trim()) {
-      warnings.push('存在未识别的文本，请使用「主： / 副：」或「title: / subTitle:」标签。');
+      // Without an opening label, keep the entire cell as plain text.
+      return [{ title: input, subTitle: '' }];
     }
   }
-  return { items, warnings: [...new Set(warnings)] };
+  return items;
 }
