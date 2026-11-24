@@ -1,0 +1,9 @@
+import { defineConfig } from 'vitest/config';
+import vue from '@vitejs/plugin-vue';
+
+export default defineConfig({
+  base: './',
+  plugins: [vue()],
+  test: { environment: 'jsdom', include: ['tests/**/*.test.ts'] },
+  build: { chunkSizeWarningLimit: 700 },
+});
