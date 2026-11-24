@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref, shallowRef } from 'vue';
-import { Download, FileSpreadsheet, LoaderCircle, ShieldCheck } from '@lucide/vue';
+import { Clipboard, Download, FileSpreadsheet, LoaderCircle, ShieldCheck } from '@lucide/vue';
 import FileUploader from './components/FileUploader.vue';
 import { downloadFile, exportBatch, packageDownload } from './core/export-batch';
 import { inspectTemplate } from './core/inspect-template';
 import { MAX_FILE_SIZE } from './core/ooxml';
-import { readSource } from './core/parse-source';
+import { readSource, readTextSource } from './core/parse-source';
 import type { CopyRow, ExportFile, TemplateInfo } from './types';
 
 const templateName = ref('');
+const mode = ref<'file' | 'paste'>('file');
+const pasted = ref('');
 const busy = ref(false);
 const status = ref('');
 const error = ref('');
@@ -17,14 +19,15 @@ let customTemplate: TemplateInfo | undefined;
 let defaultTemplate: TemplateInfo | undefined;
 
 function showError(cause: unknown) {
-  error.value = cause instanceof Error ? cause.message : '处理失败，请重新选择文件。';
+  error.value = cause instanceof Error ? cause.message : '处理失败，请重试。';
 }
 
 async function loadDefault() {
   if (defaultTemplate) return defaultTemplate;
   const response = await fetch(`${import.meta.env.BASE_URL}templates/push-default.xlsx`);
   if (!response.ok) throw new Error('默认模板加载失败，请重试。');
-  defaultTemplate = await inspectTemplate(new Uint8Array(await response.arrayBuffer()));
+  const info = await inspectTemplate(new Uint8Array(await response.arrayBuffer()));
+  defaultTemplate = { ...info, extendRows: true };
   return defaultTemplate;
 }
 
@@ -57,31 +60,14 @@ function restoreDefault() {
   result.value = null;
 }
 
-async function generate(files: File[]) {
-  if (busy.value || !files.length) return;
+async function generate(loadRows: () => Promise<CopyRow[]>, readingStatus: string) {
+  if (busy.value) return;
   busy.value = true;
-  status.value = '正在读取源文件…';
+  status.value = readingStatus;
   error.value = '';
   result.value = null;
   try {
-    if (files.reduce((size, file) => size + file.size, 0) > 100 * 1024 * 1024)
-      throw new Error('单次上传的文件合计不能超过 100 MB，请分批选择。');
-
-    const rows: CopyRow[] = [];
-    for (const file of files) {
-      try {
-        if (file.size > MAX_FILE_SIZE) throw new Error('单个文件不能超过 20 MB。');
-        const sourceRows = await readSource(new Uint8Array(await file.arrayBuffer()), file.name);
-        if (!sourceRows.some((row) => row.locales.en_US.length || row.locales.es_ES.length))
-          throw new Error('没找到英文或西语文案。请检查表头，或将文案放在 B、C 两列。');
-        rows.push(...sourceRows);
-      } catch (cause) {
-        throw new Error(
-          `${file.name}：${cause instanceof Error ? cause.message : '文件读取失败。'}`,
-        );
-      }
-    }
-
+    const rows = await loadRows();
     const template = customTemplate ?? (await loadDefault());
     status.value = `正在生成 0 / ${rows.length} 份 Excel…`;
     const workbooks = await exportBatch(rows, template, (done, total) => {
@@ -98,6 +84,57 @@ async function generate(files: File[]) {
     status.value = '';
   }
 }
+
+function requireCopy(rows: CopyRow[], hint: string): CopyRow[] {
+  if (!rows.some((row) => row.locales.en_US.length || row.locales.es_ES.length))
+    throw new Error(hint);
+  return rows;
+}
+
+function generateFiles(files: File[]) {
+  if (!files.length) return;
+  return generate(async () => {
+    if (files.reduce((size, file) => size + file.size, 0) > 100 * 1024 * 1024)
+      throw new Error('单次上传的文件合计不能超过 100 MB，请分批选择。');
+
+    const rows: CopyRow[] = [];
+    for (const file of files) {
+      try {
+        if (file.size > MAX_FILE_SIZE) throw new Error('单个文件不能超过 20 MB。');
+        const sourceRows = await readSource(new Uint8Array(await file.arrayBuffer()), file.name);
+        rows.push(
+          ...requireCopy(
+            sourceRows,
+            '没找到英文或西语。表格请检查语言列，TXT 请检查 EN / ES 分段。',
+          ),
+        );
+      } catch (cause) {
+        throw new Error(
+          file.name + '：' + (cause instanceof Error ? cause.message : '文件读取失败。'),
+        );
+      }
+    }
+    return rows;
+  }, '正在读取源文件…');
+}
+
+function generatePasted() {
+  return generate(async () => {
+    if (new TextEncoder().encode(pasted.value).length > MAX_FILE_SIZE)
+      throw new Error('粘贴的内容不能超过 20 MB。');
+    return requireCopy(
+      readTextSource(pasted.value, '粘贴的文案'),
+      '没找到文案。请将名称、EN 和 ES 各写在单独一行。',
+    );
+  }, '正在读取粘贴的文案…');
+}
+
+function switchMode(next: typeof mode.value) {
+  if (mode.value === next) return;
+  mode.value = next;
+  result.value = null;
+  error.value = '';
+}
 </script>
 
 <template>
@@ -107,20 +144,54 @@ async function generate(files: File[]) {
   <main>
     <div class="intro">
       <h1>Push 文案批量转 Excel</h1>
-      <p>源表每一行生成一份 Excel，自动填入英文和西语。多份文件会打包成 ZIP。</p>
+      <p>上传文件或粘贴文案，自动填入英文和西语。多份 Excel 会打包成 ZIP。</p>
     </div>
 
     <section class="upload-card" aria-labelledby="source-title">
-      <h2 id="source-title">上传源表</h2>
-      <p class="format-note">无表头时，按 A 列编号、B 列英文、C 列西语读取。</p>
-      <FileUploader
-        accept=".csv,.xlsx,.tsv,.txt"
-        multiple
-        :disabled="busy"
-        title="选择或拖入源文件"
-        hint="支持 CSV、XLSX、TSV、TXT · 单个文件最大 20 MB"
-        @files="generate"
-      />
+      <h2 id="source-title">文案来源</h2>
+      <div class="input-modes" role="group" aria-label="输入方式">
+        <button
+          type="button"
+          :aria-pressed="mode === 'file'"
+          :disabled="busy"
+          @click="switchMode('file')"
+        >
+          <FileSpreadsheet :size="16" aria-hidden="true" />上传文件
+        </button>
+        <button
+          type="button"
+          :aria-pressed="mode === 'paste'"
+          :disabled="busy"
+          @click="switchMode('paste')"
+        >
+          <Clipboard :size="16" aria-hidden="true" />粘贴文案
+        </button>
+      </div>
+      <template v-if="mode === 'file'">
+        <p class="format-note">表格按行拆分，TXT 按名称和 EN / ES 分段拆分。</p>
+        <FileUploader
+          accept=".csv,.xlsx,.tsv,.txt"
+          multiple
+          :disabled="busy"
+          title="选择或拖入源文件"
+          hint="支持 CSV、XLSX、TSV、TXT · 单个文件最大 20 MB"
+          @files="generateFiles"
+        />
+      </template>
+      <form v-else class="paste-form" @submit.prevent="generatePasted">
+        <p id="paste-hint" class="format-note">名称单独写一行，下面用 EN 和 ES 分隔两种文案。</p>
+        <textarea
+          v-model="pasted"
+          aria-label="待转换的文案"
+          aria-describedby="paste-hint"
+          rows="8"
+          :disabled="busy"
+          placeholder="买免：&#10;EN&#10;1. 主：English title&#10;副：English subtitle&#10;ES&#10;1. 主：Título en español&#10;副：Subtítulo en español"
+        />
+        <button class="primary-button" :disabled="busy || !pasted.trim()" type="submit">
+          生成并下载
+        </button>
+      </form>
 
       <div v-if="status" class="feedback" role="status">
         <LoaderCircle class="spinner" :size="18" aria-hidden="true" />

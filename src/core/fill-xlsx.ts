@@ -1,10 +1,12 @@
 import { copyLocales, type CopyRow, type TemplateInfo } from '../types';
 import {
+  MAIN_NS,
   columnIndex,
   columnName,
   decodeText,
   elements,
   escapeXml,
+  cellText,
   openZip,
   readPart,
   sharedStrings,
@@ -92,6 +94,56 @@ export function richText(value: string, fonts: Fonts, prefix = ''): string {
   return `<${prefix}is>${segments.map((segment) => `<${prefix}r><${prefix}rPr>${segment.emoji ? fonts.emoji : fonts.plain}</${prefix}rPr><${prefix}t xml:space="preserve">${escapeXml(segment.text)}</${prefix}t></${prefix}r>`).join('')}</${prefix}is>`;
 }
 
+function extendDefaultRows(
+  doc: Document,
+  original: TemplateInfo['pairs'],
+  required: number,
+  shared: Element[],
+): TemplateInfo['pairs'] {
+  const pairs = [...original];
+  const last = pairs[pairs.length - 1];
+  const sheetData = elements(doc, 'sheetData')[0];
+  const titleRow = elements(sheetData, 'row').find(
+    (row) => Number(row.getAttribute('r')) === last.title,
+  );
+  const subTitleRow = sheetData.lastElementChild;
+  if (!titleRow || Number(subTitleRow?.getAttribute('r')) !== last.subTitle || !subTitleRow) {
+    throw new Error('默认模板的文案行结构有误。');
+  }
+  const lastRow = last.subTitle + (required - pairs.length) * 2;
+  if (lastRow > 20000) throw new Error('文案组数太多，请将源文案拆分后再试。');
+  const dimension = elements(doc, 'dimension')[0];
+  const range = dimension?.getAttribute('ref');
+  if (range) dimension.setAttribute('ref', range.replace(/\d+$/, String(lastRow)));
+
+  function appendRow(sample: Element, rowNumber: number) {
+    const copy = sample.cloneNode(true) as Element;
+    copy.setAttribute('r', String(rowNumber));
+    for (const cell of elements(copy, 'c')) {
+      const ref = cell.getAttribute('r') ?? '';
+      cell.setAttribute('r', ref.replace(/\d+$/, String(rowNumber)));
+      if (cell.getAttribute('t') === 's') {
+        // Inline cloned labels so the template's shared string counts stay unchanged.
+        const label = cellText(cell, shared);
+        const inline = doc.createElementNS(MAIN_NS, 'is');
+        const text = doc.createElementNS(MAIN_NS, 't');
+        text.textContent = label;
+        inline.append(text);
+        cell.setAttribute('t', 'inlineStr');
+        cell.replaceChildren(inline);
+      }
+    }
+    sheetData.append(copy);
+  }
+
+  for (let title = last.subTitle + 1; title <= lastRow; title += 2) {
+    appendRow(titleRow, title);
+    appendRow(subTitleRow, title + 1);
+    pairs.push({ title, subTitle: title + 1 });
+  }
+  return pairs;
+}
+
 export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Uint8Array> {
   const { path } = template;
   const zip = await openZip(template.bytes);
@@ -102,6 +154,11 @@ export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Ui
   ]);
   const doc = xml(sheetText);
   const styles = xml(styleText);
+  const required = Math.max(row.locales.en_US.length, row.locales.es_ES.length);
+  const expanded = template.extendRows && required > template.pairs.length;
+  const pairs = expanded
+    ? extendDefaultRows(doc, template.pairs, required, shared)
+    : template.pairs;
   const prefix = doc.documentElement.prefix ? `${doc.documentElement.prefix}:` : '';
   const cells = new Map(elements(doc, 'c').map((c) => [c.getAttribute('r') ?? '', c]));
   const changes = new Map<string, string>();
@@ -109,11 +166,11 @@ export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Ui
     const col = template.locales[locale];
     const items = row.locales[locale];
     const position = `${row.source} 第 ${row.rowNumber} 行（${locale}）`;
-    if (items.length > template.pairs.length)
+    if (items.length > pairs.length)
       throw new Error(
-        `${position}有 ${items.length} 组文案，模板只有 ${template.pairs.length} 组位置。`,
+        `${position}有 ${items.length} 组文案，模板只有 ${pairs.length} 组位置。可恢复默认模板后重试。`,
       );
-    template.pairs.forEach((pair, index) => {
+    pairs.forEach((pair, index) => {
       for (const field of ['title', 'subTitle'] as const) {
         const value = items[index]?.[field] ?? '';
         if (value.length > 32767) throw new Error(`${position}的文案超过 Excel 单元格的长度限制。`);
@@ -125,7 +182,7 @@ export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Ui
     });
   }
   // Only replace selected <c> nodes. All other XML text remains byte-for-byte intact.
-  let output = sheetText.replace(
+  let output = (expanded ? serialize(doc.documentElement) : sheetText).replace(
     /<((?:[\w.-]+:)?c)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1\s*>)/g,
     (whole, tag: string, attrs: string, inner: string | undefined) => {
       const ref = attrs.match(/\br\s*=\s*["']([^"']+)["']/)?.[1] ?? '';

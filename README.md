@@ -1,12 +1,13 @@
 # PushSheet Studio
 
-上传源表，每条数据行生成一份 Excel。默认把英文和西语写入「push加班」模板。单份直接下载 XLSX，多份自动打包为 ZIP。文件在浏览器内处理。
+上传源表或粘贴文案，默认把英文和西语写入「push加班」模板。单份直接下载 XLSX，多份自动打包为 ZIP。文件在浏览器内处理。
 
 [打开工作台](https://orbitlog.github.io/pushsheet-studio/)
 
 ## 源表格式
 
 - 支持 CSV、XLSX、TSV 和 UTF-8 TXT，可以一次上传多份。
+- 表格每条数据行生成一份 Excel。TXT 也支持下面的分段文本格式。
 - 用 `en_US` 和 `es_ES` 表头指定语言列，也支持「英文」「西语」等常用列名。无表头时按 A 列编号、B 列英文、C 列西语读取。
 - 空行跳过。编号只用于命名文件，缺少编号时使用行号。重复编号按顺序加数字后缀，每行单独生成。
 - 单元格内用「主：」「副：」或 `title:`、`subTitle:` 分隔多组文案。无标签的文本整体写入首个主标题。空白文案保留空白，国旗、Emoji、空格和换行随原文写入。
@@ -20,9 +21,30 @@ ID,en_US,es_ES
 副：Explora los favoritos de la semana"
 ```
 
+## TXT 和粘贴格式
+
+用单独一行写名称，下方用 EN / ES 标记语言。每个名称对应一份 Excel，并用该名称命名。也兼容 EN_US / ES_ES、全角冒号，以及复制 Markdown 时带入的编号转义和换行标记。
+
+```text
+买免：
+EN
+1. 主：English title
+副：English subtitle
+ES
+1. 主：Título en español
+副：Subtítulo en español
+perk折上折
+EN
+1. 主：Another title
+副：Another subtitle
+ES
+1. 主：Otro título
+副：Otro subtítulo
+```
+
 ## 模板
 
-默认模板有三组主副标题位置。通过「更换模板」可使用其他 XLSX。模板需要 `TextType`、`en_US` 和 `es_ES` 表头，以及成对的 `title` 和 `subTitle` 行。两种语言的文案槽会按源表填充，其余列、布局和内嵌图片保留。文案放不进模板或源表无法读取时，上传区会给出原因。
+默认模板从三组主副标题位置起步，组数更多时自动复制行格式并扩充。通过「更换模板」可使用其他 XLSX。自定义模板需要 `TextType`、`en_US` 和 `es_ES` 表头，以及足够的 `title` 和 `subTitle` 行。两种语言的文案槽会按输入填充，其余列、布局和内嵌图片保留。
 
 ## 开发
 

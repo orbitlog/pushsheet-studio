@@ -13,5 +13,6 @@ export type TemplateInfo = {
   path: string;
   locales: Record<CopyLocale, number>;
   pairs: { title: number; subTitle: number }[];
+  extendRows?: boolean;
 };
 export type ExportFile = { name: string; bytes: Uint8Array };

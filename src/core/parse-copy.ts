@@ -1,5 +1,8 @@
 import type { CopyItem } from '../types';
 
+export const copyLabel =
+  /^\s*(?:\d+\s*\\?[.．、)）]\s*)?(主(?:标题)?|副(?:标题)?|title|subTitle)\s*[:：](.*)$/i;
+
 export function parseCopy(input: string): CopyItem[] {
   if (!input.trim()) return [];
   const items: CopyItem[] = [];
@@ -10,11 +13,9 @@ export function parseCopy(input: string): CopyItem[] {
   const lines = input.split(/(\r\n|\r|\n)/);
   for (let i = 0; i < lines.length; i += 2) {
     const line = lines[i];
-    const match = line.match(
-      /^\s*(?:(\d+)\s*[.．、)）]\s*)?(主(?:标题)?|副(?:标题)?|title|subTitle)\s*[:：](.*)$/i,
-    );
+    const match = copyLabel.exec(line);
     if (match) {
-      const nextField = /^(主|title)/i.test(match[2]) ? 'title' : 'subTitle';
+      const nextField = /^(主|title)/i.test(match[1]) ? 'title' : 'subTitle';
       if (
         !active ||
         (nextField === 'title' && seen.has('title')) ||
@@ -26,7 +27,7 @@ export function parseCopy(input: string): CopyItem[] {
       }
       field = nextField;
       seen.add(field);
-      active[field] = match[3];
+      active[field] = match[2];
     } else if (active && field) {
       active[field] += `${lines[i - 1] ?? ''}${line}`;
     } else if (line.trim()) {

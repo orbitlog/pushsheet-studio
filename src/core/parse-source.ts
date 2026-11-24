@@ -2,17 +2,16 @@ import Papa from 'papaparse';
 import type { CopyRow } from '../types';
 import { MAX_FILE_SIZE, readWorkbook } from './ooxml';
 import { parseCopy } from './parse-copy';
+import { languageMarker, parseSections } from './parse-sections';
 
 const idHeader = /^(?:id|项目(?:名称|编号|\s*id)?|序号|编号|project(?:[ _]?id)?)$/i;
-const englishHeader = /^(?:en(?:[_-]us)?|english|英文|英语)$/i;
-const spanishHeader = /^(?:es(?:[_-]es)?|spanish|español|西语|西班牙文|西班牙语)$/i;
 
 function rowsToCopy(rows: string[][], source: string): CopyRow[] {
   const firstIndex = rows.findIndex((row) => row.some((value) => value?.trim()));
   if (firstIndex < 0) return [];
   const first = rows[firstIndex];
-  const english = first.findIndex((value) => englishHeader.test(value?.trim() ?? ''));
-  const spanish = first.findIndex((value) => spanishHeader.test(value?.trim() ?? ''));
+  const english = first.findIndex((value) => languageMarker(value ?? '') === 'en_US');
+  const spanish = first.findIndex((value) => languageMarker(value ?? '') === 'es_ES');
   const id = first.findIndex((value) => idHeader.test(value?.trim() ?? ''));
   const hasLanguageHeaders = english >= 0 && spanish >= 0;
   const hasHeader = hasLanguageHeaders || id === 0;
@@ -48,6 +47,10 @@ export function parseDelimited(text: string, name: string): CopyRow[] {
   return rowsToCopy(data, name);
 }
 
+export function readTextSource(text: string, name: string): CopyRow[] {
+  return parseSections(text, name) ?? parseDelimited(text, name);
+}
+
 export async function readSource(bytes: Uint8Array, name: string): Promise<CopyRow[]> {
   if (bytes.length > MAX_FILE_SIZE) throw new Error('单个文件不能超过 20 MB。');
   if (/\.xlsx$/i.test(name)) {
@@ -61,5 +64,5 @@ export async function readSource(bytes: Uint8Array, name: string): Promise<CopyR
   } catch {
     throw new Error('请将文件另存为 UTF-8 编码后再上传。');
   }
-  return parseDelimited(text, name);
+  return /\.txt$/i.test(name) ? readTextSource(text, name) : parseDelimited(text, name);
 }
