@@ -27,9 +27,10 @@ describe('source rows', () => {
     );
     expect(rows.map((row) => row.id)).toEqual(['same', 'same']);
     expect(rows.map((row) => row.rowNumber)).toEqual([2, 3]);
-    expect(rows[0].locales.es_ES[0].title).toBe('Hola');
-    expect(rows[0].locales.en_US[0].title).toBe('Hello');
-    expect(rows[1].locales).toEqual({ en_US: [{ title: 'World', subTitle: '' }], es_ES: [] });
+    expect(rows[0].locales.es[0].title).toBe('Hola');
+    expect(rows[0].locales.en[0].title).toBe('Hello');
+    expect(rows[0].locales.fr_FR[0].title).toBe('Bonjour');
+    expect(rows[1].locales).toMatchObject({ en: [{ title: 'World', subTitle: '' }], es: [] });
   });
 
   it('uses the row number when a source has language headers without IDs', () => {

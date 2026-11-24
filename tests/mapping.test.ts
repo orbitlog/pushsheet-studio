@@ -4,9 +4,10 @@ import { defaultBytes, inlineCell, mutateTemplate, syntheticRows } from './fixtu
 import { fillXlsx } from '../src/core/fill-xlsx';
 
 describe('fixed template columns', () => {
-  it('locates en_US, es_ES and title/subTitle rows', async () => {
+  it('locates multiple language columns and title/subTitle rows', async () => {
     const info = await inspectTemplate(await defaultBytes());
-    expect(info.locales).toEqual({ en_US: 2, es_ES: 7 });
+    expect(info.locales).toMatchObject({ en_US: 2, fr_FR: 5, es_ES: 7 });
+    expect(info.locales).not.toHaveProperty('id');
     expect(info.pairs).toEqual([
       { title: 2, subTitle: 3 },
       { title: 4, subTitle: 5 },
@@ -14,13 +15,13 @@ describe('fixed template columns', () => {
     ]);
   });
 
-  it('rejects a custom template missing a fixed language or paired rows', async () => {
-    const missingLanguage = await mutateTemplate(async (zip) => {
+  it('rejects duplicate normalized language columns or unpaired rows', async () => {
+    const duplicateLanguage = await mutateTemplate(async (zip) => {
       const path = 'xl/worksheets/sheet1.xml';
       const sheet = await zip.file(path)!.async('string');
-      zip.file(path, sheet.replace(/<c r="H1".*?<\/c>/, inlineCell('H1', 'fr_FR')));
+      zip.file(path, sheet.replace(/<c r="H1".*?<\/c>/, inlineCell('H1', 'FR-fr')));
     });
-    await expect(inspectTemplate(missingLanguage)).rejects.toThrow('es_ES');
+    await expect(inspectTemplate(duplicateLanguage)).rejects.toThrow('语言表头重复');
 
     const unpaired = await mutateTemplate(async (zip) => {
       const path = 'xl/worksheets/sheet1.xml';

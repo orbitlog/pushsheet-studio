@@ -86,7 +86,7 @@ async function generate(loadRows: () => Promise<CopyRow[]>, readingStatus: strin
 }
 
 function requireCopy(rows: CopyRow[], hint: string): CopyRow[] {
-  if (!rows.some((row) => row.locales.en_US.length || row.locales.es_ES.length))
+  if (!rows.some((row) => Object.values(row.locales).some((items) => items.length)))
     throw new Error(hint);
   return rows;
 }
@@ -103,10 +103,7 @@ function generateFiles(files: File[]) {
         if (file.size > MAX_FILE_SIZE) throw new Error('单个文件不能超过 20 MB。');
         const sourceRows = await readSource(new Uint8Array(await file.arrayBuffer()), file.name);
         rows.push(
-          ...requireCopy(
-            sourceRows,
-            '没找到英文或西语。表格请检查语言列，TXT 请检查 EN / ES 分段。',
-          ),
+          ...requireCopy(sourceRows, '没找到可导出的文案。请检查表头或语言标记，例如 FR、fr_FR。'),
         );
       } catch (cause) {
         throw new Error(
@@ -124,7 +121,7 @@ function generatePasted() {
       throw new Error('粘贴的内容不能超过 20 MB。');
     return requireCopy(
       readTextSource(pasted.value, '粘贴的文案'),
-      '没找到文案。请将名称、EN 和 ES 各写在单独一行。',
+      '没找到文案。请分别用一行写名称和语言标记，例如 FR。',
     );
   }, '正在读取粘贴的文案…');
 }
@@ -144,7 +141,7 @@ function switchMode(next: typeof mode.value) {
   <main>
     <div class="intro">
       <h1>Push 文案批量转 Excel</h1>
-      <p>上传文件或粘贴文案，自动填入英文和西语。多份 Excel 会打包成 ZIP。</p>
+      <p>上传文件或粘贴文案，按语言自动填入模板。多份 Excel 会打包成 ZIP。</p>
     </div>
 
     <section class="upload-card" aria-labelledby="source-title">
@@ -168,7 +165,7 @@ function switchMode(next: typeof mode.value) {
         </button>
       </div>
       <template v-if="mode === 'file'">
-        <p class="format-note">表格按行拆分，TXT 按名称和 EN / ES 分段拆分。</p>
+        <p class="format-note">表格按行拆分，TXT 按名称和语言分段拆分。</p>
         <FileUploader
           accept=".csv,.xlsx,.tsv,.txt"
           multiple
@@ -179,14 +176,16 @@ function switchMode(next: typeof mode.value) {
         />
       </template>
       <form v-else class="paste-form" @submit.prevent="generatePasted">
-        <p id="paste-hint" class="format-note">名称单独写一行，下面用 EN 和 ES 分隔两种文案。</p>
+        <p id="paste-hint" class="format-note">
+          名称和语言各写一行。只写 FR 也可以，系统会自动找到法语列。
+        </p>
         <textarea
           v-model="pasted"
           aria-label="待转换的文案"
           aria-describedby="paste-hint"
           rows="8"
           :disabled="busy"
-          placeholder="买免：&#10;EN&#10;1. 主：English title&#10;副：English subtitle&#10;ES&#10;1. 主：Título en español&#10;副：Subtítulo en español"
+          placeholder="促销文案：&#10;FR&#10;1. 主：Notre sélection du jour&#10;副：Découvrez les nouveautés"
         />
         <button class="primary-button" :disabled="busy || !pasted.trim()" type="submit">
           生成并下载

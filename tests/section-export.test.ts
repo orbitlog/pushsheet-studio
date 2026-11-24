@@ -4,7 +4,6 @@ import { exportBatch, packageDownload } from '../src/core/export-batch';
 import { inspectTemplate } from '../src/core/inspect-template';
 import { elements, readWorkbook, xml } from '../src/core/ooxml';
 import { readSource, readTextSource } from '../src/core/parse-source';
-import { copyLocales } from '../src/types';
 import { defaultBytes } from './fixtures';
 
 const names = ['示例一', '示例二', '示例三', '示例四', '示例五', '示例六', 'Example VII'];
@@ -29,7 +28,7 @@ describe('named TXT and pasted copy', () => {
     const uploaded = await readSource(new TextEncoder().encode(markdown), 'upload.txt');
     expect(pasted.map((row) => row.id)).toEqual(names);
     expect(uploaded).toEqual(pasted.map((row) => ({ ...row, source: 'upload.txt' })));
-    expect(uploaded[0].locales.en_US[4]).toEqual({ title: 'Hello 5 🇨🇱', subTitle: '\t0  4 ' });
+    expect(uploaded[0].locales.en[4]).toEqual({ title: 'Hello 5 🇨🇱', subTitle: '\t0  4 ' });
 
     const template = { ...(await inspectTemplate(await defaultBytes())), extendRows: true };
     const files = await exportBatch(uploaded, template);
@@ -40,8 +39,10 @@ describe('named TXT and pasted copy', () => {
       const { sheets, zip } = await readWorkbook(file.bytes);
       const rows = sheets[0].rows;
       expect(rows).toHaveLength(11);
-      for (const locale of copyLocales) {
-        const col = template.locales[locale];
+      for (const [locale, col] of [
+        ['en', template.locales.en_US],
+        ['es', template.locales.es_ES],
+      ] as const) {
         for (let j = 0; j < 5; j++) {
           expect(rows[1 + j * 2][col]).toBe(uploaded[i].locales[locale][j].title);
           expect(rows[2 + j * 2][col]).toBe(uploaded[i].locales[locale][j].subTitle);
@@ -60,7 +61,7 @@ describe('named TXT and pasted copy', () => {
 
   it('keeps a multiline subtitle with its language and reports empty or repeated sections', () => {
     const text = '示例：\r\nEN:\r\n1. 主：Hello\r\n副：Line one\r\nLine two\r\nES：\r\n主：Hola';
-    expect(readTextSource(text, 'paste')[0].locales.en_US[0].subTitle).toBe('Line one\r\nLine two');
+    expect(readTextSource(text, 'paste')[0].locales.en[0].subTitle).toBe('Line one\r\nLine two');
     expect(() => readTextSource('示例\nEN\nES\n主：Hola', 'paste')).toThrow('没有文案');
     expect(() => readTextSource('示例\nEN\n主：Hello\nEN\n主：Again', 'paste')).toThrow(
       '语言标记重复',

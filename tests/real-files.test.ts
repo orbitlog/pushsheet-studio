@@ -7,7 +7,6 @@ import { inspectTemplate } from '../src/core/inspect-template';
 import { readSource } from '../src/core/parse-source';
 import { exportBatch, packageDownload } from '../src/core/export-batch';
 import { readWorkbook } from '../src/core/ooxml';
-import { copyLocales } from '../src/types';
 
 const fixtureDir = process.env.PUSHSHEET_FIXTURES_DIR;
 const available =
@@ -29,7 +28,7 @@ describe.skipIf(!available)('private real-file regression (never committed)', ()
     const original = await JSZip.loadAsync(templateBytes);
     for (let i = 0; i < files.length; i++) {
       const workbook = await readWorkbook(files[i].bytes);
-      for (const locale of copyLocales) {
+      for (const locale of Object.keys(rows[i].locales)) {
         const col = info.locales[locale];
         info.pairs.forEach((pair, j) => {
           expect(workbook.sheets[0].rows[pair.title - 1][col]).toBe(

@@ -1,17 +1,6 @@
-import type { CopyLocale, CopyRow } from '../types';
+import type { CopyRow } from '../types';
 import { copyLabel, parseCopy } from './parse-copy';
-
-const english = /^(?:en(?:[_-]us)?|english|英文|英语)$/i;
-const spanish = /^(?:es(?:[_-]es)?|spanish|español|西语|西班牙文|西班牙语)$/i;
-
-export function languageMarker(text: string): CopyLocale | undefined {
-  const label = text
-    .trim()
-    .replace(/^#{1,6}\s+/, '')
-    .replace(/[:：]\s*$/, '');
-  if (english.test(label)) return 'en_US';
-  if (spanish.test(label)) return 'es_ES';
-}
+import { languageMarker } from './locale';
 
 // Recognize Markdown hard breaks only when the source consistently uses them.
 function splitLines(text: string): { text: string; ending: string }[] {
@@ -41,8 +30,8 @@ export function parseSections(text: string, source: string): CopyRow[] | undefin
   if (!lines.some((line) => languageMarker(line.text))) return;
   const rows: CopyRow[] = [];
   let active: CopyRow | undefined;
-  let section: { locale: CopyLocale; marker: number } | undefined;
-  let seen = new Set<CopyLocale>();
+  let section: { locale: string; marker: number } | undefined;
+  let seen = new Set<string>();
   let previousContent = -1;
 
   function finish(end: number) {
@@ -69,7 +58,6 @@ export function parseSections(text: string, source: string): CopyRow[] | undefin
       const startsNamedBlock =
         canBeName &&
         (!active ||
-          seen.size === 2 ||
           seen.has(locale) ||
           /[:：]$/.test(candidate) ||
           !lines[previousContent - 1]?.text.trim());
@@ -85,14 +73,14 @@ export function parseSections(text: string, source: string): CopyRow[] | undefin
         const start = startsNamedBlock ? previousContent : index;
         if (!rows.length && lines.slice(0, start).some((line) => line.text.trim())) {
           throw new Error(
-            '第 ' + (index + 1) + ' 行前有未识别的内容。请将名称单独放在 EN 或 ES 的上一行。',
+            '第 ' + (index + 1) + ' 行前有未识别的内容。请将名称单独放在语言标记的上一行。',
           );
         }
         active = {
           id: name || '文案',
           rowNumber: start + 1,
           source,
-          locales: { en_US: [], es_ES: [] },
+          locales: {},
         };
         rows.push(active);
         seen = new Set();

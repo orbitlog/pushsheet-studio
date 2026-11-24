@@ -1,8 +1,8 @@
 # 实现约定
 
-表格经 `readSource` 逐行生成 `CopyRow`。TXT 和粘贴文本共用分段解析，可以按名称及 EN / ES 标记生成 `CopyRow`。文件选择、拖放和粘贴共用导出流程，单份 XLSX 直接下载，多份 XLSX 由 `packageDownload` 打为 ZIP。
+表格经 `readSource` 逐行生成 `CopyRow`。TXT 和粘贴文本共用分段解析，可以按名称及语言标记生成 `CopyRow`。文件选择、拖放和粘贴共用导出流程，单份 XLSX 直接下载，多份 XLSX 由 `packageDownload` 打为 ZIP。
 
-`inspectTemplate` 通过工作簿关系定位工作表，并识别 `TextType`、`en_US` 和 `es_ES` 表头。默认模板和用户替换的模板共用该路径。目标槽位按读入的内容写入，缺失的文案槽留空，其他 ZIP 部件保持原有内容。
+`inspectTemplate` 通过工作簿关系定位工作表，并识别 `TextType` 与语言表头。源文案与模板共享语言代码规范化规则。导出首先按完整代码匹配，短代码只有一个对应列时也可匹配。找不到列或有多个备选列时提示输入位置。其他 ZIP 部件保持原有内容。
 
 `fillXlsx` 定向修改模板的文案单元格。默认模板可复制末尾的一组格式并增加行，自定义模板按原有容量填充。对普通文字和 Emoji 生成富文本运行段，使用 `Intl.Segmenter` 保留国旗和组合 Emoji 的字符簇。内容按 Excel 文本写入。
 

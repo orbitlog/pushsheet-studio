@@ -2,7 +2,8 @@ import Papa from 'papaparse';
 import type { CopyRow } from '../types';
 import { MAX_FILE_SIZE, readWorkbook } from './ooxml';
 import { parseCopy } from './parse-copy';
-import { languageMarker, parseSections } from './parse-sections';
+import { languageMarker } from './locale';
+import { parseSections } from './parse-sections';
 
 const idHeader = /^(?:id|项目(?:名称|编号|\s*id)?|序号|编号|project(?:[ _]?id)?)$/i;
 
@@ -10,27 +11,38 @@ function rowsToCopy(rows: string[][], source: string): CopyRow[] {
   const firstIndex = rows.findIndex((row) => row.some((value) => value?.trim()));
   if (firstIndex < 0) return [];
   const first = rows[firstIndex];
-  const english = first.findIndex((value) => languageMarker(value ?? '') === 'en_US');
-  const spanish = first.findIndex((value) => languageMarker(value ?? '') === 'es_ES');
   const id = first.findIndex((value) => idHeader.test(value?.trim() ?? ''));
-  const hasLanguageHeaders = english >= 0 && spanish >= 0;
-  const hasHeader = hasLanguageHeaders || id === 0;
+  const columns = new Map<string, number>();
+  if (!/^\d+$/.test(first[0]?.trim() ?? '')) {
+    first.forEach((value, column) => {
+      if (column === id) return;
+      const locale = languageMarker(value ?? '');
+      if (!locale) return;
+      if (columns.has(locale)) throw new Error('源表的语言表头重复：' + value + '。');
+      columns.set(locale, column);
+    });
+  }
+  const hasLanguageHeaders = columns.size > 0;
+  const hasHeader = hasLanguageHeaders || id >= 0;
   const idColumn = hasLanguageHeaders ? id : 0;
-  const englishColumn = hasLanguageHeaders ? english : 1;
-  const spanishColumn = hasLanguageHeaders ? spanish : 2;
+  if (!hasHeader) {
+    columns.set('en_US', 1);
+    columns.set('es_ES', 2);
+  }
 
   return rows.flatMap((row, index) => {
     if (index < firstIndex || (index === firstIndex && hasHeader)) return [];
     const name = row[idColumn]?.trim();
-    const en = row[englishColumn] ?? '';
-    const es = row[spanishColumn] ?? '';
-    if (!name && !en.trim() && !es.trim()) return [];
+    const locales = Object.fromEntries(
+      Array.from(columns, ([locale, column]) => [locale, parseCopy(row[column] ?? '')]),
+    );
+    if (!name && !Object.values(locales).some((items) => items.length)) return [];
     return [
       {
         id: name || String(index + 1),
         rowNumber: index + 1,
         source,
-        locales: { en_US: parseCopy(en), es_ES: parseCopy(es) },
+        locales,
       },
     ];
   });

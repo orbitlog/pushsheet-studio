@@ -1,22 +1,31 @@
 import type { TemplateInfo } from '../types';
+import { languageMarker } from './locale';
 import { readWorkbook } from './ooxml';
 
 export async function inspectTemplate(bytes: Uint8Array): Promise<TemplateInfo> {
   const { sheets } = await readWorkbook(bytes);
   for (const sheet of sheets) {
-    const headerIndex = sheet.rows.findIndex((row) => {
-      const headers = row.map((cell) => cell?.trim().toLowerCase());
-      return ['texttype', 'en_us', 'es_es'].every((label) => headers.includes(label));
-    });
+    const headerIndex = sheet.rows.findIndex((row) =>
+      row.some((cell) => cell?.trim().toLowerCase() === 'texttype'),
+    );
     if (headerIndex === -1) continue;
 
-    const headers = sheet.rows[headerIndex].map((cell) => cell?.trim().toLowerCase());
-    if (
-      ['texttype', 'en_us', 'es_es'].some((label) => headers.filter((v) => v === label).length > 1)
-    )
-      throw new Error('模板的 TextType、en_US 或 es_ES 表头重复。');
-
-    const typeColumn = headers.indexOf('texttype');
+    const headers = sheet.rows[headerIndex];
+    const types = headers.flatMap((value, column) =>
+      value?.trim().toLowerCase() === 'texttype' ? [column] : [],
+    );
+    if (types.length > 1) throw new Error('模板的 TextType 表头重复。');
+    const [typeColumn] = types;
+    const locales: Record<string, number> = {};
+    headers.forEach((value, column) => {
+      // ID is the identifier column in a Push template. Use id_ID for Indonesian.
+      if (value?.trim().toLowerCase() === 'id') return;
+      const locale = languageMarker(value ?? '');
+      if (!locale) return;
+      if (Object.hasOwn(locales, locale)) throw new Error('模板的语言表头重复：' + value + '。');
+      locales[locale] = column;
+    });
+    if (!Object.keys(locales).length) continue;
     const pairs: TemplateInfo['pairs'] = [];
     let titleRow: number | undefined;
     for (let index = headerIndex + 1; index < sheet.rows.length; index++) {
@@ -36,9 +45,9 @@ export async function inspectTemplate(bytes: Uint8Array): Promise<TemplateInfo> 
     return {
       bytes,
       path: sheet.path,
-      locales: { en_US: headers.indexOf('en_us'), es_ES: headers.indexOf('es_es') },
+      locales,
       pairs,
     };
   }
-  throw new Error('模板需要 TextType、en_US 和 es_ES 三列表头。');
+  throw new Error('模板需要 TextType 和至少一个语言表头，例如 fr_FR。');
 }

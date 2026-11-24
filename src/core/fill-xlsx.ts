@@ -1,4 +1,5 @@
-import { copyLocales, type CopyRow, type TemplateInfo } from '../types';
+import type { CopyRow, TemplateInfo } from '../types';
+import { matchingLocales } from './locale';
 import {
   MAIN_NS,
   columnIndex,
@@ -145,6 +146,23 @@ function extendDefaultRows(
 }
 
 export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Uint8Array> {
+  const selected = new Map<string, CopyRow['locales'][string]>();
+  const sourceRow = row.source + ' 第 ' + row.rowNumber + ' 行';
+  for (const [source, items] of Object.entries(row.locales)) {
+    if (!items.length) continue;
+    const matches = matchingLocales(source, template.locales);
+    if (!matches.length) throw new Error(sourceRow + '：模板没有与 ' + source + ' 对应的语言列。');
+    if (matches.length > 1)
+      throw new Error(
+        sourceRow + '：' + source + ' 对应多列，请在源文中指定 ' + matches.join(' 或 ') + '。',
+      );
+    const [locale] = matches;
+    if (selected.has(locale))
+      throw new Error(sourceRow + '：多个语言标记对应模板的 ' + locale + ' 列，请合并文案。');
+    selected.set(locale, items);
+  }
+  if (!selected.size) return template.bytes;
+
   const { path } = template;
   const zip = await openZip(template.bytes);
   const [sheetText, shared, styleText] = await Promise.all([
@@ -154,7 +172,7 @@ export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Ui
   ]);
   const doc = xml(sheetText);
   const styles = xml(styleText);
-  const required = Math.max(row.locales.en_US.length, row.locales.es_ES.length);
+  const required = Math.max(...Array.from(selected.values(), (items) => items.length));
   const expanded = template.extendRows && required > template.pairs.length;
   const pairs = expanded
     ? extendDefaultRows(doc, template.pairs, required, shared)
@@ -162,9 +180,8 @@ export async function fillXlsx(template: TemplateInfo, row: CopyRow): Promise<Ui
   const prefix = doc.documentElement.prefix ? `${doc.documentElement.prefix}:` : '';
   const cells = new Map(elements(doc, 'c').map((c) => [c.getAttribute('r') ?? '', c]));
   const changes = new Map<string, string>();
-  for (const locale of copyLocales) {
+  for (const [locale, items] of selected) {
     const col = template.locales[locale];
-    const items = row.locales[locale];
     const position = `${row.source} 第 ${row.rowNumber} 行（${locale}）`;
     if (items.length > pairs.length)
       throw new Error(
